@@ -1,0 +1,179 @@
+from fastapi import APIRouter
+from pydantic import BaseModel
+from typing import Literal
+import json, re
+from database import query
+from llm import call_llm, DEFAULT_PROVIDER, SUPPORTED_PROVIDERS
+
+router = APIRouter(prefix="/chat", tags=["chat"])
+
+def clean_sql(raw: str) -> str:
+    """LLMs often wrap SQL in ```sql ... ``` fences, add prose, or a trailing
+    semicolon despite instructions. Extract just the runnable SQL."""
+    s = raw.strip()
+    # If the model fenced the SQL, take the content of the first fenced block.
+    m = re.search(r"```(?:sql)?\s*(.*?)```", s, re.DOTALL | re.IGNORECASE)
+    if m:
+        s = m.group(1)
+    # Drop any remaining stray backticks and a leading language hint.
+    s = s.replace("`", "").strip()
+    s = re.sub(r"^sql\s*\n", "", s, flags=re.IGNORECASE)
+    return s.strip().rstrip(";").strip()
+
+SCHEMA = """
+Tables:
+- matches(match_id BIGINT, duration INT seconds, game_mode INT,
+  start_time TIMESTAMP, patch TEXT, radiant_win BOOLEAN)
+- player_matches(match_id BIGINT, account_id BIGINT, hero_id INT,
+  kills INT, deaths INT, assists INT, gpm INT, xpm INT,
+  last_hits INT, denies INT, net_worth INT, won BOOLEAN, player_slot INT)
+- heroes(hero_id INT, name TEXT, local_name TEXT, primary_attr TEXT,
+  attack_type TEXT, roles TEXT[])
+
+Key joins (always alias tables and qualify columns to avoid ambiguity):
+- FROM player_matches pm JOIN matches m ON pm.match_id = m.match_id
+- FROM player_matches pm JOIN heroes  h ON pm.hero_id  = h.hero_id
+
+Column locations (do not guess the wrong table):
+- duration, start_time, patch, game_mode, radiant_win  -> matches (alias m)
+- kills, deaths, assists, gpm, xpm, last_hits, denies, net_worth, won,
+  player_slot, account_id, hero_id                     -> player_matches (alias pm)
+- hero display name (e.g. "Invoker")                   -> heroes.local_name (alias h)
+
+Rules baked in:
+- Always filter pm.account_id = {account_id}.
+- `duration` lives ONLY in matches, so JOIN matches whenever you need it.
+  It is in seconds — divide by 60 for minutes.
+- is_radiant = pm.player_slot < 128.
+- `won` and `radiant_win` are BOOLEAN. Aggregate with ::int
+  (SUM(won::int), AVG(won::int)). NEVER cast a boolean to float/double.
+  Win rate = ROUND(100.0 * SUM(pm.won::int) / COUNT(*), 1).
+- Always fully qualify column names with their table alias.
+- This is PostgreSQL: paginate with `LIMIT n OFFSET m`, never MySQL-style
+  `LIMIT m, n`. To compare recent windows, use subqueries with
+  ORDER BY m.start_time DESC LIMIT n OFFSET m.
+"""
+
+def nl_to_sql(question: str, account_id: int, provider: str) -> str:
+    prompt = f"""You are a PostgreSQL expert analyzing Dota 2 match data.
+
+{SCHEMA.format(account_id=account_id)}
+
+Write a PostgreSQL query to answer: "{question}"
+
+Rules:
+- Always filter by account_id = {account_id}
+- Return ONLY the raw SQL — no markdown, no explanation, no backticks
+- LIMIT 50 rows unless the question asks for all
+"""
+    return call_llm(prompt, provider=provider, max_tokens=500)
+
+def interpret(question: str, sql: str, results: list, provider: str) -> str:
+    prompt = f"""You are analyzing Dota 2 performance data.
+
+Question: {question}
+SQL used: {sql}
+Results: {results}
+
+Give a specific, actionable insight in 2-3 sentences.
+Reference actual numbers. If results are empty, say the data is not available yet."""
+    return call_llm(prompt, provider=provider, max_tokens=300)
+
+class ChatRequest(BaseModel):
+    question: str
+    account_id: int
+    provider: str = DEFAULT_PROVIDER
+
+@router.post("/query")
+def chat_query(req: ChatRequest):
+    try:
+        sql     = clean_sql(nl_to_sql(req.question, req.account_id, req.provider))
+        results = query(sql)
+        insight = interpret(req.question, sql, results, req.provider)
+        return {
+            "question": req.question,
+            "sql":      sql,
+            "results":  results,
+            "insight":  insight,
+            "provider": req.provider
+        }
+    except ValueError as e:
+        # Provider not configured
+        return {"error": str(e), "question": req.question, "provider": req.provider}
+    except Exception as e:
+        return {"error": str(e), "question": req.question}
+
+@router.get("/suggestions/{account_id}")
+def get_suggestions(
+    account_id: int,
+    provider: str = DEFAULT_PROVIDER
+):
+    """Generate 3 clickable questions based on the player's actual data."""
+    overview = query(
+        """
+        SELECT
+          COUNT(*)                                         AS total_games,
+          ROUND(100.0 * SUM(won::int) / COUNT(*), 1)      AS win_rate,
+          ROUND(AVG(gpm), 0)                               AS avg_gpm,
+          SUM(CASE WHEN m.start_time > NOW() - INTERVAL '7 days'
+              THEN won::int END)                           AS wins_this_week,
+          COUNT(CASE WHEN m.start_time > NOW() - INTERVAL '7 days'
+              THEN 1 END)                                  AS games_this_week
+        FROM player_matches pm
+        JOIN matches m ON pm.match_id = m.match_id
+        WHERE pm.account_id = %s
+        """,
+        (account_id,)
+    )
+
+    context = f"""
+Total games: {overview[0]['total_games']}
+Win rate: {overview[0]['win_rate']}%
+Avg GPM: {overview[0]['avg_gpm']}
+Games this week: {overview[0]['games_this_week']}
+Wins this week: {overview[0]['wins_this_week']}
+"""
+
+    prompt = f"""Based on this Dota 2 player's stats, suggest exactly 3 specific
+questions they should ask about their performance.
+
+{context}
+
+Rules:
+- Each question must be answerable from match data
+  (kills, deaths, gpm, win rate, hero, duration, patch, etc.)
+- Target a different aspect each: one about heroes, one about game
+  phase or timing, one about trends or comparisons
+- Make them specific to this player's numbers, not generic
+- Return ONLY a valid JSON array of 3 strings, nothing else
+
+Example: ["Which hero do I win most with?", "Do I play better early or late?",
+"Has my GPM improved recently?"]"""
+
+    fallback = [
+        "Which hero do I have the highest win rate on?",
+        "Do I perform better in early, mid, or late game?",
+        "What is my average GPM when I win versus when I lose?"
+    ]
+
+    try:
+        raw = call_llm(prompt, provider=provider, max_tokens=200)
+        suggestions = json.loads(raw)
+        return {"suggestions": suggestions[:3], "provider": provider}
+    except Exception:
+        return {"suggestions": fallback, "provider": provider}
+
+@router.get("/providers")
+def list_providers():
+    """Return which providers are configured (have API keys set)."""
+    import os
+    keys = {
+        "gemini": bool(os.getenv("GEMINI_API_KEY", "").strip()),
+        "groq":   bool(os.getenv("GROQ_API_KEY",   "").strip()),
+        "claude": bool(os.getenv("ANTHROPIC_API_KEY", "").strip()),
+    }
+    return {
+        "providers":  SUPPORTED_PROVIDERS,
+        "configured": [p for p, has_key in keys.items() if has_key],
+        "default":    DEFAULT_PROVIDER
+    }
