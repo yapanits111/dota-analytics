@@ -55,6 +55,56 @@ def recent(account_id: int, limit: int = 50):
         (account_id, limit)
     )
 
+@router.get("/attributes/{account_id}")
+def attribute_stats(account_id: int):
+    """Win rate grouped by each hero's primary attribute
+    (Strength / Agility / Intelligence / Universal)."""
+    return query(
+        """
+        SELECT
+          CASE h.primary_attr
+            WHEN 'str' THEN 'Strength'
+            WHEN 'agi' THEN 'Agility'
+            WHEN 'int' THEN 'Intelligence'
+            WHEN 'all' THEN 'Universal'
+            ELSE COALESCE(h.primary_attr, 'Unknown')
+          END                                            AS attribute,
+          COUNT(*)                                       AS games,
+          SUM(pm.won::int)                               AS wins,
+          ROUND(100.0 * SUM(pm.won::int) / COUNT(*), 1)  AS win_rate,
+          ROUND(AVG(pm.gpm), 0)                          AS avg_gpm
+        FROM player_matches pm
+        JOIN heroes h ON pm.hero_id = h.hero_id
+        WHERE pm.account_id = %s
+        GROUP BY attribute
+        ORDER BY games DESC
+        """,
+        (account_id,)
+    )
+
+@router.get("/roles/{account_id}")
+def role_stats(account_id: int):
+    """Approximate win rate by hero role (Carry / Support / etc.). A hero can
+    have several roles, so a match counts toward each of its hero's roles —
+    treat this as directional, not exact position tracking."""
+    return query(
+        """
+        SELECT
+          role,
+          COUNT(*)                                       AS games,
+          SUM(pm.won::int)                               AS wins,
+          ROUND(100.0 * SUM(pm.won::int) / COUNT(*), 1)  AS win_rate
+        FROM player_matches pm
+        JOIN heroes h ON pm.hero_id = h.hero_id
+        CROSS JOIN LATERAL unnest(h.roles) AS role
+        WHERE pm.account_id = %s
+        GROUP BY role
+        HAVING COUNT(*) >= 2
+        ORDER BY games DESC
+        """,
+        (account_id,)
+    )
+
 @router.get("/tip/{account_id}")
 def get_tip(
     account_id: int,

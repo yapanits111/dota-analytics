@@ -62,12 +62,6 @@ export default function ChatInterface({ accountId, provider }: Props) {
               </span>
               <div className="bubble">
                 {m.content}
-                {m.sql && (
-                  <details className="sql-toggle">
-                    <summary>SQL used</summary>
-                    <pre>{m.sql}</pre>
-                  </details>
-                )}
               </div>
             </div>
           ))}

@@ -72,6 +72,11 @@ export default function App() {
             )}
           </div>
         )}
+
+        <footer className="footer">
+          Data from the OpenDota API · Unofficial fan project, not affiliated with
+          or endorsed by Valve. Dota 2 is a trademark of Valve Corporation.
+        </footer>
       </main>
     </div>
   );

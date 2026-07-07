@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { searchPlayer, syncPlayer } from "../api/client";
+import { searchPlayer, syncPlayer, getAccountProfile } from "../api/client";
 
 interface Player { account_id: number; personaname: string; last_match_time?: string; }
 interface Props  { onPlayerSelect: (id: number, name: string) => void; }
@@ -19,8 +19,17 @@ export default function PlayerSearch({ onPlayerSelect }: Props) {
     // sometimes-flaky OpenDota name search and works for private-name profiles.
     if (/^\d+$/.test(term)) {
       setError("");
+      setResults([]);
       setSearched(true);
-      setResults([{ account_id: Number(term), personaname: `Account ${term}` }]);
+      setSearching(true);
+      try {
+        const p = await getAccountProfile(Number(term));
+        setResults([{ account_id: Number(term), personaname: p.personaname }]);
+      } catch {
+        setResults([{ account_id: Number(term), personaname: `Account ${term}` }]);
+      } finally {
+        setSearching(false);
+      }
       return;
     }
     setSearching(true);

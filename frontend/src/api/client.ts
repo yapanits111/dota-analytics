@@ -22,6 +22,15 @@ export const getHeroStats   = (id: number) =>
 export const getDuration    = (id: number) =>
   api.get(`/stats/duration/${id}`).then(r => r.data);
 
+export const getAttributes  = (id: number) =>
+  api.get(`/stats/attributes/${id}`).then(r => r.data);
+
+export const getRoles       = (id: number) =>
+  api.get(`/stats/roles/${id}`).then(r => r.data);
+
+export const getAccountProfile = (id: number) =>
+  api.get(`/search/account/${id}`).then(r => r.data);
+
 export const getRecent      = (id: number) =>
   api.get(`/stats/recent/${id}`).then(r => r.data);
 

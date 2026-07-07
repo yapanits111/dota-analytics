@@ -28,3 +28,20 @@ async def search_player(q: str):
         detail=f"OpenDota did not respond after {ATTEMPTS} tries ({last_err}). "
                f"It rate-limits search — please try again in a few seconds."
     )
+
+
+@router.get("/account/{account_id}")
+async def account_profile(account_id: int):
+    """Look up a player's display name by account id (used when the user enters
+    a raw account ID instead of searching by name)."""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                f"https://api.opendota.com/api/players/{account_id}"
+            )
+            r.raise_for_status()
+            data = r.json() or {}
+        name = ((data.get("profile") or {}).get("personaname"))
+        return {"account_id": account_id, "personaname": name or f"Account {account_id}"}
+    except httpx.HTTPError:
+        return {"account_id": account_id, "personaname": f"Account {account_id}"}
