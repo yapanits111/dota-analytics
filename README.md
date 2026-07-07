@@ -31,14 +31,16 @@ OpenDota API → ETL → PostgreSQL → FastAPI → React
 All LLM calls go through `backend/llm.py`. Adding a provider means editing only
 that file.
 
-| Provider | Model                | Status                                    |
-|----------|----------------------|-------------------------------------------|
-| Gemini   | `gemini-1.5-flash`   | Active (free tier)                        |
-| Groq     | `llama-3.1-8b-instant` | Active (free tier)                      |
-| Claude   | `claude-sonnet-5`    | Implemented — activates when you add a key |
+| Provider | Model                    | Status                                     |
+|----------|--------------------------|--------------------------------------------|
+| Groq     | `llama-3.3-70b-versatile`| **Default** — active on the free tier      |
+| Gemini   | `gemini-2.0-flash`       | Active when the key has free-tier quota     |
+| Claude   | `claude-sonnet-5`        | Implemented — activates when you add a key  |
 
-The UI shows a `🔒` on any provider without a configured API key. Claude is wired
-end-to-end; drop `ANTHROPIC_API_KEY` into the environment to enable it.
+The UI shows a `🔒` on any provider without a configured API key. Groq is the
+default because its 70B model is the strongest free option for Text-to-SQL.
+Claude is wired end-to-end; drop `ANTHROPIC_API_KEY` into the environment to
+enable it.
 
 ## Local setup
 
@@ -52,29 +54,37 @@ docker compose up --build
 ```
 
 - Backend: http://localhost:8000 (interactive docs at `/docs`)
-- Postgres: localhost:5432 (schema auto-applied on first boot)
+- Postgres: the container maps to host port **5433** (5432 inside), chosen to
+  avoid clashing with a native PostgreSQL that may already own 5432. The backend
+  applies `sql/schema.sql` automatically on startup.
 
 Run the frontend separately:
 
 ```bash
 cd frontend
 npm install        # generates package-lock.json (commit it so CI's `npm ci` works)
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:4310
+```
+
+For local dev the backend is easiest to run from source (so the `/sync` button
+works — it shells out to `etl/`):
+
+```bash
+cd backend
+uvicorn main:app --port 8000      # reads ../.env (DATABASE_URL -> localhost:5433)
 ```
 
 ### Loading data
 
-The `/sync/{account_id}` endpoint runs the ETL as a subprocess and expects the
-`etl/` directory alongside `backend/` (true when you run the backend from source).
-The Docker `backend` image only copies `backend/`, so when running fully in
-Docker, load data by running the ETL directly instead:
+Use the app's search box (name or numeric account ID), or run the ETL directly:
 
 ```bash
-# from the repo root, with DATABASE_URL pointing at the DB
-python etl/run_etl.py <account_id> 200
+python etl/run_etl.py <account_id> 50
 ```
 
-Find your `account_id` via the search box, or from your OpenDota profile URL.
+Find your `account_id` from the search box or your OpenDota profile URL. Note:
+players must enable **"Expose Public Match Data"** in Dota 2 for OpenDota (and
+this app) to see their matches.
 
 ## Example questions
 
@@ -89,13 +99,14 @@ Screenshot these in the running app and paste them below:
 ## Deployment
 
 - **Backend + PostgreSQL → Railway.** New project → Deploy from GitHub → add the
-  PostgreSQL plugin (sets `DATABASE_URL`) → add a service with root directory
-  `backend` (Railway detects the Dockerfile). Set `GEMINI_API_KEY`, `GROQ_API_KEY`,
-  optionally `ANTHROPIC_API_KEY`, and `ALLOWED_ORIGINS` (your Vercel URL). Apply the
-  schema once via the Railway shell: `psql $DATABASE_URL -f sql/schema.sql`.
+  **PostgreSQL** plugin (sets `DATABASE_URL`). Railway builds the root
+  `Dockerfile` (via `railway.json`), which bundles the API + ETL + schema and
+  binds `$PORT`. The backend applies `sql/schema.sql` on startup, so no manual
+  step is needed. Set env vars: `GROQ_API_KEY` (and/or `GEMINI_API_KEY`),
+  optionally `ANTHROPIC_API_KEY`, and `ALLOWED_ORIGINS` (your Vercel URL).
 - **Frontend → Vercel.** Add the same repo, root directory `frontend`, env var
-  `VITE_API_URL=https://your-backend.railway.app`. After both are live, copy the
-  Vercel URL back into Railway's `ALLOWED_ORIGINS`.
+  `VITE_API_URL=https://your-backend.up.railway.app`. After both are live, copy
+  the Vercel URL back into Railway's `ALLOWED_ORIGINS` and redeploy.
 
 ## Notes
 
