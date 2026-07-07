@@ -96,17 +96,23 @@ Screenshot these in the running app and paste them below:
 4. Am I improving? Compare my last 30 games to the 30 before that.
 5. Do I win more on Radiant or Dire?
 
-## Deployment
+The app is deploy-ready: the root `Dockerfile` bundles the API + ETL + schema,
+binds `$PORT`, and applies `sql/schema.sql` on startup (no manual DB step). It
+reads `DATABASE_URL`, `GROQ_API_KEY` / `GEMINI_API_KEY`, and `ALLOWED_ORIGINS`
+from the environment, so it runs on any Docker host.
 
-- **Backend + PostgreSQL → Railway.** New project → Deploy from GitHub → add the
-  **PostgreSQL** plugin (sets `DATABASE_URL`). Railway builds the root
-  `Dockerfile` (via `railway.json`), which bundles the API + ETL + schema and
-  binds `$PORT`. The backend applies `sql/schema.sql` on startup, so no manual
-  step is needed. Set env vars: `GROQ_API_KEY` (and/or `GEMINI_API_KEY`),
-  optionally `ANTHROPIC_API_KEY`, and `ALLOWED_ORIGINS` (your Vercel URL).
-- **Frontend → Vercel.** Add the same repo, root directory `frontend`, env var
-  `VITE_API_URL=https://your-backend.up.railway.app`. After both are live, copy
-  the Vercel URL back into Railway's `ALLOWED_ORIGINS` and redeploy.
+### Free stack (Neon + Render + Vercel)
+
+- **Database → [Neon](https://neon.tech).** Free Postgres, no expiry. Create a
+  project and copy the connection string (ends with `?sslmode=require`).
+- **Backend → [Render](https://render.com).** New → Blueprint → this repo (uses
+  `render.yaml`). Set `DATABASE_URL` (Neon), `GROQ_API_KEY`, and `ALLOWED_ORIGINS`
+  (your Vercel URL). Free web services sleep after 15 min idle (≈50s cold start).
+- **Frontend → [Vercel](https://vercel.com).** Import the repo, root directory
+  `frontend`, env var `VITE_API_URL=https://<your-render-service>.onrender.com`.
+
+Railway works too (add its PostgreSQL plugin, it builds via `railway.json`) but
+its free tier is a one-time trial credit rather than free forever.
 
 ## Notes
 

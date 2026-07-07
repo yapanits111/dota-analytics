@@ -1,0 +1,20 @@
+# Render blueprint — free Docker web service for the API.
+# Pair it with a free Neon Postgres database (set DATABASE_URL below in the
+# Render dashboard). Deploy via Render -> New -> Blueprint -> this repo.
+services:
+  - type: web
+    name: dota-analytics-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # Set these in the Render dashboard (sync:false keeps them out of git):
+      - key: DATABASE_URL       # Neon connection string (ends with ?sslmode=require)
+        sync: false
+      - key: GROQ_API_KEY       # https://console.groq.com  (free)
+        sync: false
+      - key: GEMINI_API_KEY     # optional
+        sync: false
+      - key: ALLOWED_ORIGINS    # your Vercel URL, set after the frontend deploys
+        sync: false
