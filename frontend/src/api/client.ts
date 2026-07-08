@@ -40,6 +40,11 @@ export const getTip         = (id: number, provider: string) =>
 export const getSuggestions = (id: number, provider: string) =>
   api.get(`/chat/suggestions/${id}`, { params: { provider } }).then(r => r.data);
 
-export const chatQuery      = (question: string, accountId: number, provider: string) =>
-  api.post("/chat/query", { question, account_id: accountId, provider })
+export const chatQuery      = (
+  question: string,
+  accountId: number,
+  provider: string,
+  history: { role: string; content: string }[] = []
+) =>
+  api.post("/chat/query", { question, account_id: accountId, provider, history })
      .then(r => r.data);

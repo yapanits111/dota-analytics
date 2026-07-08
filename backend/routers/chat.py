@@ -57,17 +57,40 @@ Rules baked in:
   ORDER BY m.start_time DESC LIMIT n OFFSET m.
 """
 
-def nl_to_sql(question: str, account_id: int, provider: str) -> str:
-    prompt = f"""You are a PostgreSQL expert analyzing Dota 2 match data.
+DATA_SCOPE = """This dataset has ONLY per-match summary stats: hero played,
+win/loss, kills, deaths, assists, GPM, XPM, last hits, denies, net worth,
+Radiant/Dire (player_slot), match duration, game mode, patch, and start time.
+It has NO data on item builds, skill/ability builds, hero matchups or counters,
+lane/role/position, MMR/rank, wards, runes, or objectives."""
+
+def format_history(history, limit: int = 4) -> str:
+    """Compact the last few chat turns so follow-up questions have context."""
+    if not history:
+        return ""
+    lines = []
+    for h in history[-limit:]:
+        who = "User" if (h.get("role") == "user") else "Analyst"
+        lines.append(f"{who}: {h.get('content', '')}")
+    return "Recent conversation (context for follow-ups):\n" + "\n".join(lines) + "\n\n"
+
+def nl_to_sql(question: str, account_id: int, provider: str, history=None) -> str:
+    prompt = f"""You are a PostgreSQL expert analyzing one Dota 2 player's match data.
 
 {SCHEMA.format(account_id=account_id)}
 
-Write a PostgreSQL query to answer: "{question}"
+{DATA_SCOPE}
+
+{format_history(history)}Question: "{question}"
 
 Rules:
-- Always filter by account_id = {account_id}
-- Return ONLY the raw SQL — no markdown, no explanation, no backticks
-- LIMIT 50 rows unless the question asks for all
+- Always filter by pm.account_id = {account_id}.
+- If the question asks for something NOT in this data (item builds, skill builds,
+  matchups/counters, MMR, wards, lanes/positions), reply with exactly: NO_QUERY
+- For "best/recommended hero" questions, only count heroes with a real sample:
+  add HAVING COUNT(*) >= 3, then ORDER BY win rate DESC, games DESC.
+- Never filter on a specific literal win-rate percentage from the question.
+- Return ONLY the raw SQL — no markdown, no explanation, no backticks.
+- LIMIT 50 rows unless the question asks for all.
 """
     return call_llm(prompt, provider=provider, max_tokens=500)
 
@@ -95,26 +118,55 @@ Return ONLY the corrected raw SQL (no markdown, no explanation). Common fixes:
 """
     return clean_sql(call_llm(prompt, provider=provider, max_tokens=500))
 
-def interpret(question: str, sql: str, results: list, provider: str) -> str:
-    prompt = f"""You are analyzing Dota 2 performance data.
+def interpret(question: str, sql: str, results: list, provider: str, history=None) -> str:
+    prompt = f"""You are a sharp Dota 2 analyst talking to the player about THEIR stats.
 
-Question: {question}
-SQL used: {sql}
-Results: {results}
+{DATA_SCOPE}
 
-Give a specific, actionable insight in 2-3 sentences.
-Reference actual numbers. If results are empty, say the data is not available yet."""
-    return call_llm(prompt, provider=provider, max_tokens=300)
+{format_history(history)}Question: "{question}"
+Query results (JSON): {results}
+
+Answer in 2-3 concise sentences:
+- Reference the actual numbers from the results.
+- When recommending, favor options with a solid sample (about 5+ games); treat a
+  100% win rate on 1-2 games as noise — mention it only as a caveat, never as the
+  main recommendation.
+- Do NOT invent data that isn't in the results (no item builds, matchups, MMR).
+- If the results are empty, say so in ONE sentence and suggest a related question
+  this data CAN answer (best hero by win rate, GPM trend, early vs late game,
+  Radiant vs Dire) — do not speculate or pad.
+- Stay consistent with anything you already said earlier in the conversation."""
+    return call_llm(prompt, provider=provider, max_tokens=280)
 
 class ChatRequest(BaseModel):
     question: str
     account_id: int
     provider: str = DEFAULT_PROVIDER
+    history: list[dict] = []
 
 @router.post("/query")
 def chat_query(req: ChatRequest):
     try:
-        sql = clean_sql(nl_to_sql(req.question, req.account_id, req.provider))
+        sql = clean_sql(nl_to_sql(req.question, req.account_id,
+                                  req.provider, req.history))
+
+        # Out-of-scope question (items, builds, matchups, MMR, ...) → be honest.
+        if "NO_QUERY" in sql.upper():
+            return {
+                "question": req.question,
+                "sql":      None,
+                "results":  [],
+                "insight": (
+                    "I can only analyze your recorded match stats — heroes, win "
+                    "rates, GPM/XPM, KDA, last hits, net worth, game duration, and "
+                    "Radiant vs Dire. I don't have item builds, skill builds, "
+                    "matchups, or MMR data. Try asking: \"Which hero has my best win "
+                    "rate?\", \"How's my GPM trend?\", or \"Do I play better early or "
+                    "late game?\""
+                ),
+                "provider": req.provider,
+            }
+
         try:
             results = query(sql)
         except Exception as db_err:
@@ -122,7 +174,7 @@ def chat_query(req: ChatRequest):
             sql = fix_sql(req.question, sql, str(db_err),
                           req.account_id, req.provider)
             results = query(sql)
-        insight = interpret(req.question, sql, results, req.provider)
+        insight = interpret(req.question, sql, results, req.provider, req.history)
         return {
             "question": req.question,
             "sql":      sql,
