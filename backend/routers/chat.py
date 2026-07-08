@@ -42,8 +42,11 @@ Column locations (do not guess the wrong table):
 
 Rules baked in:
 - Always filter pm.account_id = {account_id}.
-- `duration` lives ONLY in matches, so JOIN matches whenever you need it.
-  It is in seconds — divide by 60 for minutes.
+- The matches table (alias m) holds duration, start_time, patch, game_mode,
+  radiant_win. If you reference ANY m.* column — including
+  `ORDER BY m.start_time` for recency — you MUST add
+  `JOIN matches m ON pm.match_id = m.match_id` to the FROM clause.
+  `duration` is in seconds — divide by 60 for minutes.
 - is_radiant = pm.player_slot < 128.
 - `won` and `radiant_win` are BOOLEAN. Aggregate with ::int
   (SUM(won::int), AVG(won::int)). NEVER cast a boolean to float/double.
@@ -68,6 +71,30 @@ Rules:
 """
     return call_llm(prompt, provider=provider, max_tokens=500)
 
+def fix_sql(question: str, bad_sql: str, error: str,
+            account_id: int, provider: str) -> str:
+    """Self-correction: give the model its failing query and the DB error and
+    ask it to return a fixed query. Handles the class of Text-to-SQL mistakes
+    (missing JOINs, bad casts, wrong aliases) that occasionally slip through."""
+    prompt = f"""A PostgreSQL query you wrote failed. Fix it.
+
+{SCHEMA.format(account_id=account_id)}
+
+Question: "{question}"
+
+Failing query:
+{bad_sql}
+
+PostgreSQL error:
+{error}
+
+Return ONLY the corrected raw SQL (no markdown, no explanation). Common fixes:
+- If an alias like m or h is used but missing from FROM, add its JOIN
+  (matches m ON pm.match_id = m.match_id, heroes h ON pm.hero_id = h.hero_id).
+- Keep the pm.account_id = {account_id} filter and fully qualify every column.
+"""
+    return clean_sql(call_llm(prompt, provider=provider, max_tokens=500))
+
 def interpret(question: str, sql: str, results: list, provider: str) -> str:
     prompt = f"""You are analyzing Dota 2 performance data.
 
@@ -87,8 +114,14 @@ class ChatRequest(BaseModel):
 @router.post("/query")
 def chat_query(req: ChatRequest):
     try:
-        sql     = clean_sql(nl_to_sql(req.question, req.account_id, req.provider))
-        results = query(sql)
+        sql = clean_sql(nl_to_sql(req.question, req.account_id, req.provider))
+        try:
+            results = query(sql)
+        except Exception as db_err:
+            # One self-correction pass: feed the error back and retry.
+            sql = fix_sql(req.question, sql, str(db_err),
+                          req.account_id, req.provider)
+            results = query(sql)
         insight = interpret(req.question, sql, results, req.provider)
         return {
             "question": req.question,
