@@ -108,7 +108,6 @@ this app) to see their matches.
 
 ## Example questions
 
-Screenshot these in the running app and paste them below:
 
 1. Which hero do I have the highest win rate on with at least 10 games?
 2. Do I perform better in early, mid, or late game?
