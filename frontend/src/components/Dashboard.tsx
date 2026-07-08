@@ -28,7 +28,10 @@ const ATTR_COLOR: Record<string, string> = {
   Unknown:      "#6b7284"
 };
 
+type Status = "loading" | "ready" | "empty";
+
 export default function Dashboard({ accountId, provider }: Props) {
+  const [status,   setStatus]   = useState<Status>("loading");
   const [overview, setOverview] = useState<any>(null);
   const [heroes,   setHeroes]   = useState<any[]>([]);
   const [duration, setDuration] = useState<any[]>([]);
@@ -36,32 +39,94 @@ export default function Dashboard({ accountId, provider }: Props) {
   const [roles,    setRoles]    = useState<any[]>([]);
   const [recent,   setRecent]   = useState<any[]>([]);
 
+  // The player's match history syncs in the background after selection, so the
+  // data may not exist yet on first load. Poll the overview until matches appear
+  // (or give up after ~2 min and show the "no public data" state).
   useEffect(() => {
-    getOverview(accountId).then(setOverview).catch(() => {});
-    getHeroStats(accountId).then(setHeroes).catch(() => {});
-    getDuration(accountId).then(setDuration).catch(() => {});
-    getAttributes(accountId).then(setAttrs).catch(() => {});
-    getRoles(accountId).then(r => setRoles(r.slice(0, 7))).catch(() => {});
-    getRecent(accountId).then(r => setRecent([...r].reverse())).catch(() => {});
+    let alive = true;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 24;   // ~2 min at 5s
+    setStatus("loading");
+    setOverview(null); setHeroes([]); setDuration([]);
+    setAttrs([]); setRoles([]); setRecent([]);
+
+    const loadCharts = () => {
+      getHeroStats(accountId).then(d => alive && setHeroes(d)).catch(() => {});
+      getDuration(accountId).then(d => alive && setDuration(d)).catch(() => {});
+      getAttributes(accountId).then(d => alive && setAttrs(d)).catch(() => {});
+      getRoles(accountId).then(d => alive && setRoles(d.slice(0, 7))).catch(() => {});
+      getRecent(accountId).then(r => alive && setRecent([...r].reverse())).catch(() => {});
+    };
+
+    const poll = () => {
+      getOverview(accountId)
+        .then(o => {
+          if (!alive) return;
+          if (o && Number(o.total_games) > 0) {
+            setOverview(o);
+            loadCharts();
+            setStatus("ready");
+          } else if (++attempts < MAX_ATTEMPTS) {
+            setTimeout(poll, 5000);
+          } else {
+            setStatus("empty");
+          }
+        })
+        .catch(() => {
+          if (!alive) return;
+          if (++attempts < MAX_ATTEMPTS) setTimeout(poll, 5000);
+          else setStatus("empty");
+        });
+    };
+
+    poll();
+    return () => { alive = false; };
   }, [accountId]);
 
   const wr = overview ? Number(overview.win_rate) : null;
   const heroData = heroes.filter(h => h.games >= 3).slice(0, 12);
 
+  if (status === "loading") {
+    return (
+      <div className="fade-in sync-state">
+        <span className="spinner" />
+        <h3>Syncing match history…</h3>
+        <p>
+          Pulling this player's recent matches from OpenDota and crunching the
+          numbers. This takes up to a minute (the free backend also wakes from
+          sleep on the first request). The dashboard loads automatically when
+          it's ready — no need to refresh.
+        </p>
+      </div>
+    );
+  }
+
+  if (status === "empty") {
+    return (
+      <div className="fade-in sync-state">
+        <div style={{ fontSize: 34 }}>🔒</div>
+        <h3>No public match data</h3>
+        <p>
+          We couldn't find public matches for this account. In Dota 2, players
+          must turn on <strong>Settings → Options → Advanced → Expose Public
+          Match Data</strong> for their history to be visible. Try another player.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="fade-in">
       <TipBox accountId={accountId} provider={provider} />
 
-      {overview && (
-        <div className="stat-grid">
-          <Stat val={overview.total_games ?? "—"} lbl="Games" />
-          <Stat val={`${overview.win_rate ?? "—"}%`} lbl="Win rate"
-                cls={wr != null && wr >= 50 ? "good" : "bad"} />
-          <Stat val={overview.avg_gpm ?? "—"} lbl="Avg GPM" cls="gold" />
-          <Stat val={`${overview.avg_kills ?? "—"} / ${overview.avg_deaths ?? "—"}`} lbl="Avg K / D" />
-          <Stat val={overview.total_wins ?? "—"} lbl="Wins" cls="good" />
-        </div>
-      )}
+      <div className="stat-grid">
+        <Stat val={overview.total_games ?? "—"} lbl="Games" />
+        <Stat val={`${overview.win_rate ?? "—"}%`} lbl="Win rate"
+              cls={wr != null && wr >= 50 ? "good" : "bad"} />
+        <Stat val={overview.avg_gpm ?? "—"} lbl="Avg GPM" cls="gold" />
+        <Stat val={`${overview.avg_kills ?? "—"} / ${overview.avg_deaths ?? "—"}`} lbl="Avg K / D" />
+        <Stat val={overview.total_wins ?? "—"} lbl="Wins" cls="good" />
+      </div>
 
       <Section title="Win rate by hero" />
       <div className="card chart-card">

@@ -422,6 +422,19 @@ button { font-family: inherit; }
   line-height: 1.6;
 }
 
+.sync-state {
+  text-align: center;
+  max-width: 460px;
+  margin: 60px auto;
+  padding: 34px 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+}
+.sync-state .spinner { width: 26px; height: 26px; border-width: 3px; margin: 0 auto 16px; }
+.sync-state h3 { font-size: 20px; margin-bottom: 8px; }
+.sync-state p { color: var(--text-muted); font-size: 13.5px; margin: 0; }
+
 .fade-in { animation: fade 0.35s ease; }
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
