@@ -1,13 +1,33 @@
 # Dota 2 Personal Analytics
 
-**Live demo:** _add your Vercel URL here after deploy_
+### ▶️ [**Live app**](https://dota-analytics-cyan.vercel.app) &nbsp;·&nbsp; [API](https://dota-analytics-api.onrender.com/health)
+
+> Note: the backend runs on a free tier that sleeps when idle — the **first**
+> request may take ~50s to wake up, then it's fast.
 
 Type a Steam username, and this app pulls your Dota 2 match history from the
 public [OpenDota API](https://docs.opendota.com/) into PostgreSQL, then lets you
 ask questions about your performance in plain English. A provider-agnostic LLM
 layer converts your question to SQL (Text-to-SQL), runs it against your data, and
 explains the result. The dashboard also shows an LLM-generated performance tip and
-three data-driven suggested questions.
+data-driven suggested questions.
+
+Stack: **Python · FastAPI · PostgreSQL · React · TypeScript · Docker · Gemini / Groq / Claude**
+&nbsp;|&nbsp; Deployed on **Vercel + Render + Neon**.
+
+<!-- Add screenshots here, e.g.:
+![Dashboard](docs/dashboard.png)
+![Chat](docs/chat.png)
+-->
+
+## Try it
+
+1. Open the [live app](https://dota-analytics-cyan.vercel.app).
+2. Search a Steam name (e.g. `yapanits`) or paste an OpenDota account id (e.g. `70388657`).
+3. Pick a player, wait for the one-time sync, then explore the dashboard or ask a question.
+
+   Example questions: *"Which hero do I win the most with?"*, *"Do I play better
+   early or late game?"*, *"What's my average GPM when I win vs lose?"*
 
 ## Architecture
 
