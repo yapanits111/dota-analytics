@@ -47,9 +47,12 @@ Rules baked in:
   `ORDER BY m.start_time` for recency — you MUST add
   `JOIN matches m ON pm.match_id = m.match_id` to the FROM clause.
   `duration` is in seconds — divide by 60 for minutes.
-- is_radiant = pm.player_slot < 128.
-- `won` and `radiant_win` are BOOLEAN. Aggregate with ::int
-  (SUM(won::int), AVG(won::int)). NEVER cast a boolean to float/double.
+- WINS: `pm.won` is a BOOLEAN that is ALREADY correct for this player. Always use
+  it directly. NEVER recompute a win from m.radiant_win / pm.player_slot — doing
+  so produces wrong totals. Use `pm.player_slot < 128` ONLY to label which side
+  (Radiant vs Dire) the player was on, never to decide win/loss.
+- Aggregate booleans with ::int (SUM(pm.won::int)); never cast to float/double.
+  Wins = SUM(pm.won::int). Games = COUNT(*).
   Win rate = ROUND(100.0 * SUM(pm.won::int) / COUNT(*), 1).
 - Always fully qualify column names with their table alias.
 - This is PostgreSQL: paginate with `LIMIT n OFFSET m`, never MySQL-style
@@ -88,6 +91,11 @@ Rules:
   matchups/counters, MMR, wards, lanes/positions), reply with exactly: NO_QUERY
 - For "best/recommended hero" questions, only count heroes with a real sample:
   add HAVING COUNT(*) >= 3, then ORDER BY win rate DESC, games DESC.
+- If the question is a short follow-up ("why", "why not", "how come", "explain",
+  "what about that"), resolve it against the Recent conversation above: query the
+  SAME subject the previous answer was about, returning the supporting per-hero
+  or per-group rows that justify that claim. Never switch topic (e.g. do not
+  return the latest match when asked "why").
 - For hypotheticals like "what if <hero> is banned / unavailable", return the
   player's per-hero record EXCLUDING that hero
   (WHERE h.local_name <> '<hero>' ... GROUP BY h.local_name), so the answer can
