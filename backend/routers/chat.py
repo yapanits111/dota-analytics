@@ -88,6 +88,11 @@ Rules:
   matchups/counters, MMR, wards, lanes/positions), reply with exactly: NO_QUERY
 - For "best/recommended hero" questions, only count heroes with a real sample:
   add HAVING COUNT(*) >= 3, then ORDER BY win rate DESC, games DESC.
+- For hypotheticals like "what if <hero> is banned / unavailable", return the
+  player's per-hero record EXCLUDING that hero
+  (WHERE h.local_name <> '<hero>' ... GROUP BY h.local_name), so the answer can
+  name real alternative heroes. Always return hero-level rows (name, games,
+  wins, win rate) rather than a single overall number for these.
 - Never filter on a specific literal win-rate percentage from the question.
 - Return ONLY the raw SQL — no markdown, no explanation, no backticks.
 - LIMIT 50 rows unless the question asks for all.
@@ -126,15 +131,25 @@ def interpret(question: str, sql: str, results: list, provider: str, history=Non
 {format_history(history)}Question: "{question}"
 Query results (JSON): {results}
 
-Answer in 2-3 concise sentences:
+GROUNDING RULES — these override everything else:
+- The results JSON above is your ONLY source of truth. Every number, hero name,
+  and count you state MUST appear literally in it.
+- NEVER name a hero that does not appear in the results. NEVER invent games,
+  wins, kills, or averages. If you cannot support a claim from the results,
+  do not make the claim.
+- If the results are empty ([]), say plainly in ONE sentence that the data
+  doesn't cover it (e.g. the player hasn't played that hero in the synced
+  matches), then suggest a question this data CAN answer (best hero by win rate,
+  GPM trend, early vs late game, Radiant vs Dire). Do NOT substitute a different
+  hero or pad with speculation.
+- Do not use outside Dota knowledge (item builds, matchups, MMR) as if it were
+  this player's data.
+
+Then answer in 2-3 concise sentences:
 - Reference the actual numbers from the results.
 - When recommending, favor options with a solid sample (about 5+ games); treat a
   100% win rate on 1-2 games as noise — mention it only as a caveat, never as the
   main recommendation.
-- Do NOT invent data that isn't in the results (no item builds, matchups, MMR).
-- If the results are empty, say so in ONE sentence and suggest a related question
-  this data CAN answer (best hero by win rate, GPM trend, early vs late game,
-  Radiant vs Dire) — do not speculate or pad.
 - Stay consistent with anything you already said earlier in the conversation."""
     return call_llm(prompt, provider=provider, max_tokens=280)
 
