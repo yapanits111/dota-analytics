@@ -64,12 +64,15 @@ export default function App() {
               </div>
             </div>
 
-            {tab === "dashboard" && (
+            {/* Both tabs stay mounted and are toggled with CSS so switching is
+                instant: chat history is preserved and neither the dashboard nor
+                the LLM-generated suggestions re-fetch on every tab change. */}
+            <div hidden={tab !== "dashboard"}>
               <Dashboard accountId={player.id} provider={provider} />
-            )}
-            {tab === "chat" && (
+            </div>
+            <div hidden={tab !== "chat"}>
               <ChatInterface accountId={player.id} provider={provider} />
-            )}
+            </div>
           </div>
         )}
 

@@ -24,6 +24,9 @@
 
 * { box-sizing: border-box; }
 
+/* Ensure [hidden] wins over component display rules (e.g. display:flex). */
+[hidden] { display: none !important; }
+
 html, body, #root { height: 100%; }
 
 body {
