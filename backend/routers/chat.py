@@ -89,18 +89,26 @@ Rules:
 - Always filter by pm.account_id = {account_id}.
 - If the question asks for something NOT in this data (item builds, skill builds,
   matchups/counters, MMR, wards, lanes/positions), reply with exactly: NO_QUERY
+- RETURN AGGREGATED ROWS, NOT RAW MATCHES. For any question that recommends,
+  ranks, compares, or summarises (best/worst hero, "what if X is banned", "how do
+  I do with Y"), the query MUST GROUP BY and compute the numbers with SQL so the
+  answer reads straight from the rows. NEVER return raw per-match rows and expect
+  them to be counted afterwards. Every row should carry games, wins, and win_rate.
 - For "best/recommended hero" questions, only count heroes with a real sample:
   add HAVING COUNT(*) >= 3, then ORDER BY win rate DESC, games DESC.
+- Hypothetical "what if <hero> is banned / unavailable" — return the player's
+  per-hero aggregate EXCLUDING that hero, exactly like this shape:
+    SELECT h.local_name AS hero, COUNT(*) AS games, SUM(pm.won::int) AS wins,
+           ROUND(100.0*SUM(pm.won::int)/COUNT(*),1) AS win_rate
+    FROM player_matches pm JOIN heroes h ON pm.hero_id = h.hero_id
+    WHERE pm.account_id = {account_id} AND h.local_name <> '<hero>'
+    GROUP BY h.local_name HAVING COUNT(*) >= 2
+    ORDER BY win_rate DESC, games DESC;
 - If the question is a short follow-up ("why", "why not", "how come", "explain",
   "what about that"), resolve it against the Recent conversation above: query the
-  SAME subject the previous answer was about, returning the supporting per-hero
-  or per-group rows that justify that claim. Never switch topic (e.g. do not
-  return the latest match when asked "why").
-- For hypotheticals like "what if <hero> is banned / unavailable", return the
-  player's per-hero record EXCLUDING that hero
-  (WHERE h.local_name <> '<hero>' ... GROUP BY h.local_name), so the answer can
-  name real alternative heroes. Always return hero-level rows (name, games,
-  wins, win rate) rather than a single overall number for these.
+  SAME subject the previous answer was about, returning the supporting aggregated
+  rows that justify that claim. Never switch topic (e.g. do not return the latest
+  match when asked "why").
 - Never filter on a specific literal win-rate percentage from the question.
 - Return ONLY the raw SQL — no markdown, no explanation, no backticks.
 - LIMIT 50 rows unless the question asks for all.
