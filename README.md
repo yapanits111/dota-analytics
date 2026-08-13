@@ -1,141 +1,114 @@
 # Dota 2 Personal Analytics
 
-### ▶️ [**Live app**](https://dota-analytics-cyan.vercel.app) &nbsp;·&nbsp; [API](https://dota-analytics-api.onrender.com/health)
+Ask questions about your Dota 2 match history in plain English and get answers
+from your own data. Search a Steam name, and the app loads your matches from the
+public [OpenDota API](https://docs.opendota.com/) into PostgreSQL; an LLM then
+turns each question into SQL, runs it against your data, and explains the result.
 
-> Note: the backend runs on a free tier that sleeps when idle — the **first**
-> request may take ~50s to wake up, then it's fast.
+**[Live app](https://dota-analytics-cyan.vercel.app)** &nbsp;·&nbsp;
+[API](https://dota-analytics-api.onrender.com/health) &nbsp;·&nbsp;
+[![CI](https://github.com/yapanits111/dota-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/yapanits111/dota-analytics/actions/workflows/ci.yml)
 
-Type a Steam username, and this app pulls your Dota 2 match history from the
-public [OpenDota API](https://docs.opendota.com/) into PostgreSQL, then lets you
-ask questions about your performance in plain English. A provider-agnostic LLM
-layer converts your question to SQL (Text-to-SQL), runs it against your data, and
-explains the result. The dashboard also shows an LLM-generated performance tip and
-data-driven suggested questions.
+> The backend runs on a free tier that sleeps when idle, so the first request may
+> take ~50s to wake up. After that it is fast.
 
-Stack: **Python · FastAPI · PostgreSQL · React · TypeScript · Docker · Gemini / Groq / Claude**
-&nbsp;|&nbsp; Deployed on **Vercel + Render + Neon**.
+## What it does
 
-<!-- Add screenshots here, e.g.:
-![Dashboard](docs/dashboard.png)
-![Chat](docs/chat.png)
--->
+A player searches their name (or pastes an OpenDota account id), the app syncs
+their recent matches into Postgres, and presents two things:
 
-## Try it
-
-1. Open the [live app](https://dota-analytics-cyan.vercel.app).
-2. Search a Steam name (e.g. `yapanits`) or paste an OpenDota account id (e.g. `70388657`).
-3. Pick a player, wait for the one-time sync, then explore the dashboard or ask a question.
-
-   Example questions: *"Which hero do I win the most with?"*, *"Do I play better
-   early or late game?"*, *"What's my average GPM when I win vs lose?"*
+- A **dashboard** — win rate by hero, by attribute (Strength/Agility/Intelligence/
+  Universal), by role, and by game phase, plus a GPM trend and an LLM-written
+  performance tip.
+- A **natural-language chat** — you ask questions like *"which hero do I win most
+  with?"* or *"what's my GPM when I win vs lose?"*; the app converts the question
+  to SQL (Text-to-SQL), executes it on your data, and answers in plain English.
 
 ## Architecture
 
-Three tracks in one app:
-
-- **Data engineering** — a Python ETL pipeline (`etl/`) fetches heroes and match
-  details from OpenDota, transforms them, and upserts into PostgreSQL. Analytics
-  are exposed as SQL views (`hero_win_rates`, `duration_performance`).
-- **SWE** — a FastAPI REST backend (`backend/`), a React + TypeScript frontend
-  (`frontend/`), Docker Compose for local dev, and GitHub Actions CI.
-- **AI / LLM** — a single provider-agnostic entry point (`backend/llm.py`) powers
-  Text-to-SQL chat, the tip box, and dynamic question suggestions.
-
 ```
 OpenDota API → ETL → PostgreSQL → FastAPI → React
-                                     └── llm.py → Gemini / Groq / Claude
+                                     └── llm.py → Groq / Gemini / Claude
 ```
 
-## Provider support
+- **ETL** (`etl/`) fetches heroes and per-match player stats, transforms them, and
+  loads them into a normalized schema (`heroes`, `matches`, `player_matches`).
+  Loads are **idempotent** — `INSERT ... ON CONFLICT DO NOTHING` on composite keys
+  (`match_id`, `account_id`) — so re-syncing a player never creates duplicates.
+- **Backend** (`backend/`) is a FastAPI REST API. Analytics are computed in SQL,
+  including reusable views (`hero_win_rates`, `duration_performance`). All LLM
+  calls go through a single provider-agnostic entry point (`backend/llm.py`), so
+  switching between Groq, Gemini, and Claude touches only one file.
+- **Frontend** (`frontend/`) is a React + TypeScript SPA with Recharts. Because the
+  match sync runs in the background, the dashboard **polls until the data lands and
+  refreshes itself** rather than showing an empty state.
+- **Self-initializing DB** — the API applies `sql/schema.sql` on startup (the DDL
+  is idempotent), so it boots cleanly against a blank database with no manual step.
 
-All LLM calls go through `backend/llm.py`. Adding a provider means editing only
-that file.
+## Tech stack
 
-| Provider | Model                    | Status                                     |
-|----------|--------------------------|--------------------------------------------|
-| Groq     | `llama-3.3-70b-versatile`| **Default** — active on the free tier      |
-| Gemini   | `gemini-2.0-flash`       | Active when the key has free-tier quota     |
-| Claude   | `claude-sonnet-5`        | Implemented — activates when you add a key  |
+- **Languages** — Python 3.11, TypeScript
+- **Backend** — FastAPI, Uvicorn, psycopg2
+- **Frontend** — React 18, Vite, Recharts
+- **Database** — PostgreSQL 15
+- **LLM** — Groq (`llama-3.3-70b-versatile`, default), Google Gemini
+  (`gemini-2.0-flash`), Anthropic Claude — behind one interface
+- **Infra / deploy** — Docker; Vercel (web), Render (API), Neon (Postgres)
+- **CI** — GitHub Actions
 
-The UI shows a `🔒` on any provider without a configured API key. Groq is the
-default because its 70B model is the strongest free option for Text-to-SQL.
-Claude is wired end-to-end; drop `ANTHROPIC_API_KEY` into the environment to
-enable it.
-
-## Local setup
+## Run locally
 
 ```bash
-cp .env.example .env
-# edit .env and add at least one of GEMINI_API_KEY / GROQ_API_KEY
-#   Gemini free key: https://aistudio.google.com
-#   Groq free key:   https://console.groq.com
-
-docker compose up --build
+cp .env.example .env      # add at least one of GROQ_API_KEY / GEMINI_API_KEY
+docker compose up --build # starts Postgres + the API
 ```
 
-- Backend: http://localhost:8000 (interactive docs at `/docs`)
-- Postgres: the container maps to host port **5433** (5432 inside), chosen to
-  avoid clashing with a native PostgreSQL that may already own 5432. The backend
-  applies `sql/schema.sql` automatically on startup.
+- API: <http://localhost:8000> (interactive docs at `/docs`)
+- Postgres is published on host port **5433** (5432 inside the container) to avoid
+  clashing with a local PostgreSQL install. The schema is applied on startup.
 
-Run the frontend separately:
+Frontend (separate terminal):
 
 ```bash
 cd frontend
-npm install        # generates package-lock.json (commit it so CI's `npm ci` works)
-npm run dev        # http://localhost:4310
+npm install
+npm run dev               # http://localhost:4310
 ```
 
-For local dev the backend is easiest to run from source (so the `/sync` button
-works — it shells out to `etl/`):
-
-```bash
-cd backend
-uvicorn main:app --port 8000      # reads ../.env (DATABASE_URL -> localhost:5433)
-```
-
-### Loading data
-
-Use the app's search box (name or numeric account ID), or run the ETL directly:
+Load data from the app's search box, or run the ETL directly:
 
 ```bash
 python etl/run_etl.py <account_id> 50
 ```
 
-Find your `account_id` from the search box or your OpenDota profile URL. Note:
-players must enable **"Expose Public Match Data"** in Dota 2 for OpenDota (and
-this app) to see their matches.
+Free API keys: [Groq](https://console.groq.com) · [Gemini](https://aistudio.google.com).
+A player must enable **Expose Public Match Data** in Dota 2 for their history to be
+visible to OpenDota (and this app).
 
-## Example questions
+## Testing & CI
 
+[GitHub Actions](.github/workflows/ci.yml) runs on every push and PR to `main`. It
+spins up a Postgres service, applies `sql/schema.sql`, installs the backend, boots
+the API and smoke-checks `/health` and `/chat/providers`, then builds the frontend
+(`tsc && vite build`). It validates that the full stack starts and compiles — a
+build-and-smoke-test pipeline rather than a unit-test suite.
 
-1. Which hero do I have the highest win rate on with at least 10 games?
-2. Do I perform better in early, mid, or late game?
-3. What is my average GPM when I win versus when I lose?
-4. Am I improving? Compare my last 30 games to the 30 before that.
-5. Do I win more on Radiant or Dire?
+## Notable engineering decisions
 
-The app is deploy-ready: the root `Dockerfile` bundles the API + ETL + schema,
-binds `$PORT`, and applies `sql/schema.sql` on startup (no manual DB step). It
-reads `DATABASE_URL`, `GROQ_API_KEY` / `GEMINI_API_KEY`, and `ALLOWED_ORIGINS`
-from the environment, so it runs on any Docker host.
+- **Hardened Text-to-SQL.** Model-generated SQL is unreliable, so the pipeline
+  strips markdown fences, **retries with the database error fed back to the model**
+  on failures, and enforces grounding rules — answers may only cite rows the query
+  returned (added after the model was caught fabricating a hero's stats), and
+  summary/recommendation questions must return pre-aggregated `GROUP BY` rows so the
+  model reads numbers instead of miscounting raw matches.
+- **Provider-agnostic LLM layer.** A single `call_llm(prompt, provider)` function
+  fronts Groq, Gemini, and Claude; the API reports which providers have keys
+  configured and the UI disables the rest. Adding a provider is a one-file change.
+- **Idempotent, self-initializing data layer.** Composite-key `ON CONFLICT DO
+  NOTHING` inserts make repeated syncs safe, and startup schema application lets the
+  service deploy against a fresh managed database (Neon) with zero manual setup.
 
-### Free stack (Neon + Render + Vercel)
+## License
 
-- **Database → [Neon](https://neon.tech).** Free Postgres, no expiry. Create a
-  project and copy the connection string (ends with `?sslmode=require`).
-- **Backend → [Render](https://render.com).** New → Blueprint → this repo (uses
-  `render.yaml`). Set `DATABASE_URL` (Neon), `GROQ_API_KEY`, and `ALLOWED_ORIGINS`
-  (your Vercel URL). Free web services sleep after 15 min idle (≈50s cold start).
-- **Frontend → [Vercel](https://vercel.com).** Import the repo, root directory
-  `frontend`, env var `VITE_API_URL=https://<your-render-service>.onrender.com`.
-
-Railway works too (add its PostgreSQL plugin, it builds via `railway.json`) but
-its free tier is a one-time trial credit rather than free forever.
-
-## Notes
-
-- CI (`.github/workflows/ci.yml`) applies the schema, boots the API for a health
-  check, and builds the frontend. `npm ci` requires a committed `package-lock.json`.
-- Text-to-SQL executes model-generated SQL. This is scoped to a personal-analytics
-  read model; for a hardened deployment, run queries under a read-only DB role.
+MIT. A personal, unofficial fan project — not affiliated with or endorsed by Valve.
+Dota 2 is a trademark of Valve Corporation.
