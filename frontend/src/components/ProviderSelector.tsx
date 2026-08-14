@@ -15,8 +15,19 @@ const LABELS: Record<string, string> = {
 export default function ProviderSelector({ value, onChange }: Props) {
   const [configured, setConfigured] = useState<string[]>([]);
 
+  // The free backend sleeps when idle, so the first request can fail while it
+  // wakes (~50s). Retry until it answers, otherwise every provider would stay
+  // locked until a manual reload.
   useEffect(() => {
-    getProviders().then(d => setConfigured(d.configured)).catch(() => {});
+    let alive = true;
+    let attempts = 0;
+    const load = () => {
+      getProviders()
+        .then(d => { if (alive) setConfigured(d.configured || []); })
+        .catch(() => { if (alive && attempts++ < 15) setTimeout(load, 4000); });
+    };
+    load();
+    return () => { alive = false; };
   }, []);
 
   return (

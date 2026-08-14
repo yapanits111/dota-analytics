@@ -101,7 +101,7 @@ export default function PlayerSearch({ onPlayerSelect }: Props) {
         </div>
       )}
       {!searched && !searching && !syncing && (
-        <p className="hint">Tip: you can paste an OpenDota account ID directly (e.g. 70388657).</p>
+        <p className="hint">Tip: you can paste an OpenDota account ID directly (e.g. 1479001782).</p>
       )}
 
       {results.length > 0 && (
