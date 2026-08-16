@@ -90,12 +90,17 @@ Rules:
 - If the question asks for something NOT in this data (item builds, skill builds,
   matchups/counters, MMR, wards, lanes/positions), reply with exactly: NO_QUERY
 - RETURN AGGREGATED ROWS, NOT RAW MATCHES. For any question that recommends,
-  ranks, compares, or summarises (best/worst hero, "what if X is banned", "how do
-  I do with Y"), the query MUST GROUP BY and compute the numbers with SQL so the
-  answer reads straight from the rows. NEVER return raw per-match rows and expect
-  them to be counted afterwards. Every row should carry games, wins, and win_rate.
-- For "best/recommended hero" questions, only count heroes with a real sample:
-  add HAVING COUNT(*) >= 3, then ORDER BY win rate DESC, games DESC.
+  ranks, compares, summarises, or asks about a specific hero — best/worst hero,
+  highest/lowest win rate, "which hero should I pick", "what if X is banned",
+  "how do I do with Y", "look at my <hero> games", "how many games with <hero>",
+  "my <hero> stats" — the query MUST GROUP BY and compute the numbers in SQL so
+  the answer reads straight from the rows. NEVER return raw per-match rows and
+  expect them to be counted afterwards. Every hero row must carry
+  COUNT(*) AS games, SUM(pm.won::int) AS wins, and the win_rate.
+- For ANY question ranking heroes by win rate (best hero, highest win rate, which
+  hero should I pick, most successful hero), you MUST add HAVING COUNT(*) >= 3 so
+  a single lucky game does not top the list, then ORDER BY win_rate DESC,
+  games DESC. Include the games column so tiny samples are visible.
 - Hypothetical "what if <hero> is banned / unavailable" — return the player's
   per-hero aggregate EXCLUDING that hero, exactly like this shape:
     SELECT h.local_name AS hero, COUNT(*) AS games, SUM(pm.won::int) AS wins,
@@ -162,10 +167,12 @@ GROUNDING RULES — these override everything else:
   this player's data.
 
 Then answer in 2-3 concise sentences:
-- Reference the actual numbers from the results.
-- When recommending, favor options with a solid sample (about 5+ games); treat a
-  100% win rate on 1-2 games as noise — mention it only as a caveat, never as the
-  main recommendation.
+- Reference the actual numbers from the results, and ALWAYS state the games count
+  next to any win rate (e.g. "64% over 14 games"), so reliability is visible.
+- SAMPLE SIZE IS DECISIVE. NEVER recommend or headline a hero with fewer than 3
+  games. A 100% win rate on 1-2 games is statistically meaningless — if it tops
+  the list, say explicitly that it is too small a sample to matter, then give the
+  best hero that has at least ~3-5 games as the real recommendation.
 - Stay consistent with anything you already said earlier in the conversation."""
     return call_llm(prompt, provider=provider, max_tokens=280)
 
