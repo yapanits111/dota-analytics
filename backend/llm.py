@@ -63,7 +63,7 @@ def _dispatch(provider: str, prompt: str, max_tokens: int) -> str:
         key = _check_key("GROQ_API_KEY", "Groq")
         client = Groq(api_key=key)
         msg = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens
         )

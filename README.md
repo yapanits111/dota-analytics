@@ -51,7 +51,7 @@ OpenDota API → ETL → PostgreSQL → FastAPI → React
 - **Backend** — FastAPI, Uvicorn, psycopg2
 - **Frontend** — React 18, Vite, Recharts
 - **Database** — PostgreSQL 15
-- **LLM** — Groq (`llama-3.3-70b-versatile`, default), Google Gemini
+- **LLM** — Groq (`openai/gpt-oss-120b`, default), Google Gemini
   (`gemini-2.0-flash`), Anthropic Claude — behind one interface
 - **Infra / deploy** — Docker; Vercel (web), Render (API), Neon (Postgres)
 - **CI** — GitHub Actions
