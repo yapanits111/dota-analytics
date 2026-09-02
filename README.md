@@ -35,17 +35,25 @@ syncs the recent match history in the background, then renders the dashboard.
 
 ### Dashboard
 
-KPIs (games, win rate, avg GPM, K/D, wins) sit above a **win-rate-by-hero** chart
-(green = winning record, red = losing), with further breakdowns by hero attribute,
-role, and game phase, plus a GPM trend — all computed in SQL over the synced data.
+An **LLM-written performance tip** (grounded in the player's own numbers) sits above
+the KPIs (games, win rate, avg GPM, K/D, wins) and a **win-rate-by-hero** chart
+(green = winning record, red = losing), all computed in SQL over the synced data.
 
-![Win rate by hero and headline KPIs](docs/screenshots/dashboard.png)
+![Performance tip, KPIs, and win rate by hero](docs/screenshots/dashboard.png)
 
 Scrolling down surfaces the full set of breakdowns — win rate by hero attribute
 (Strength / Agility / Intelligence / Universal), by role, by game phase, and a GPM
 trend across recent matches:
 
 ![Full dashboard — attribute, role, game-phase, and GPM-trend charts](docs/screenshots/dashboard-graphs.png)
+
+### Ask a question (natural-language chat)
+
+Ask in plain English; the app converts the question to SQL (Text-to-SQL), runs it
+against your data, and answers with the real numbers — always citing the game count
+so sample size is visible.
+
+![Natural-language chat answering a question over the player's data](docs/screenshots/chat.png)
 
 ## Architecture
 
