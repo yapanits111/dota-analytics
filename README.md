@@ -41,6 +41,12 @@ role, and game phase, plus a GPM trend — all computed in SQL over the synced d
 
 ![Win rate by hero and headline KPIs](docs/screenshots/dashboard.png)
 
+Scrolling down surfaces the full set of breakdowns — win rate by hero attribute
+(Strength / Agility / Intelligence / Universal), by role, by game phase, and a GPM
+trend across recent matches:
+
+![Full dashboard — attribute, role, game-phase, and GPM-trend charts](docs/screenshots/dashboard-graphs.png)
+
 ## Architecture
 
 ```
