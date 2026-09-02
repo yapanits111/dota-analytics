@@ -54,7 +54,7 @@ def _dispatch(provider: str, prompt: str, max_tokens: int) -> str:
         import google.generativeai as genai
         key = _check_key("GEMINI_API_KEY", "Gemini")
         genai.configure(api_key=key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-3.6-flash")
         response = model.generate_content(prompt)
         return response.text.strip()
 

@@ -12,6 +12,8 @@ turns each question into SQL, runs it against your data, and explains the result
 > The backend runs on a free tier that sleeps when idle, so the first request may
 > take ~50s to wake up. After that it is fast.
 
+![Dashboard — KPIs and win-rate-by-hero for a synced player](docs/screenshots/dashboard.png)
+
 ## What it does
 
 A player searches their name (or pastes an OpenDota account id), the app syncs
@@ -23,6 +25,21 @@ their recent matches into Postgres, and presents two things:
 - A **natural-language chat** — you ask questions like *"which hero do I win most
   with?"* or *"what's my GPM when I win vs lose?"*; the app converts the question
   to SQL (Text-to-SQL), executes it on your data, and answers in plain English.
+
+### Search any player
+
+Type a Steam name or paste an OpenDota account ID; the app resolves the profile,
+syncs the recent match history in the background, then renders the dashboard.
+
+![Player search landing page](docs/screenshots/landing.png)
+
+### Dashboard
+
+KPIs (games, win rate, avg GPM, K/D, wins) sit above a **win-rate-by-hero** chart
+(green = winning record, red = losing), with further breakdowns by hero attribute,
+role, and game phase, plus a GPM trend — all computed in SQL over the synced data.
+
+![Win rate by hero and headline KPIs](docs/screenshots/dashboard.png)
 
 ## Architecture
 
@@ -52,7 +69,7 @@ OpenDota API → ETL → PostgreSQL → FastAPI → React
 - **Frontend** — React 18, Vite, Recharts
 - **Database** — PostgreSQL 15
 - **LLM** — Groq (`openai/gpt-oss-120b`, default), Google Gemini
-  (`gemini-2.0-flash`), Anthropic Claude — behind one interface
+  (`gemini-3.6-flash`), Anthropic Claude — behind one interface
 - **Infra / deploy** — Docker; Vercel (web), Render (API), Neon (Postgres)
 - **CI** — GitHub Actions
 
