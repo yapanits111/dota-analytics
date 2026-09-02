@@ -118,7 +118,7 @@ Rules:
 - Return ONLY the raw SQL — no markdown, no explanation, no backticks.
 - LIMIT 50 rows unless the question asks for all.
 """
-    return call_llm(prompt, provider=provider, max_tokens=500)
+    return call_llm(prompt, provider=provider, max_tokens=700)
 
 def fix_sql(question: str, bad_sql: str, error: str,
             account_id: int, provider: str) -> str:
@@ -142,7 +142,7 @@ Return ONLY the corrected raw SQL (no markdown, no explanation). Common fixes:
   (matches m ON pm.match_id = m.match_id, heroes h ON pm.hero_id = h.hero_id).
 - Keep the pm.account_id = {account_id} filter and fully qualify every column.
 """
-    return clean_sql(call_llm(prompt, provider=provider, max_tokens=500))
+    return clean_sql(call_llm(prompt, provider=provider, max_tokens=700))
 
 def interpret(question: str, sql: str, results: list, provider: str, history=None) -> str:
     prompt = f"""You are a sharp Dota 2 analyst talking to the player about THEIR stats.
@@ -174,7 +174,7 @@ Then answer in 2-3 concise sentences:
   the list, say explicitly that it is too small a sample to matter, then give the
   best hero that has at least ~3-5 games as the real recommendation.
 - Stay consistent with anything you already said earlier in the conversation."""
-    return call_llm(prompt, provider=provider, max_tokens=280)
+    return call_llm(prompt, provider=provider, max_tokens=500)
 
 class ChatRequest(BaseModel):
     question: str
@@ -209,9 +209,24 @@ def chat_query(req: ChatRequest):
             results = query(sql)
         except Exception as db_err:
             # One self-correction pass: feed the error back and retry.
-            sql = fix_sql(req.question, sql, str(db_err),
-                          req.account_id, req.provider)
-            results = query(sql)
+            try:
+                sql = fix_sql(req.question, sql, str(db_err),
+                              req.account_id, req.provider)
+                results = query(sql)
+            except Exception:
+                # Still broken — never leak a raw SQL/DB error to the player.
+                return {
+                    "question": req.question,
+                    "sql":      sql,
+                    "results":  [],
+                    "insight": (
+                        "I couldn't turn that into a working query over your match "
+                        "data. Try rephrasing it, or ask something like \"Which hero "
+                        "has my best win rate?\", \"How's my GPM trend?\", or \"Do I "
+                        "play better early or late game?\""
+                    ),
+                    "provider": req.provider,
+                }
         insight = interpret(req.question, sql, results, req.provider, req.history)
         return {
             "question": req.question,

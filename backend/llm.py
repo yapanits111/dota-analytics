@@ -64,6 +64,10 @@ def _dispatch(provider: str, prompt: str, max_tokens: int) -> str:
         client = Groq(api_key=key)
         msg = client.chat.completions.create(
             model="openai/gpt-oss-120b",
+            # gpt-oss is a reasoning model: without this it spends the token
+            # budget on hidden reasoning and truncates (or empties) the visible
+            # answer. "low" keeps reasoning cheap so max_tokens goes to content.
+            reasoning_effort="low",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens
         )

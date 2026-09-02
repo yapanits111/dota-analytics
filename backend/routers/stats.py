@@ -170,7 +170,7 @@ tip in 1-2 sentences. Reference actual numbers. Be specific, not generic.
 {context}"""
 
     try:
-        tip = call_llm(prompt, provider=provider, max_tokens=150)
+        tip = call_llm(prompt, provider=provider, max_tokens=400)
         return {"tip": tip, "provider": provider}
     except Exception as e:
         # Provider not configured, model error, rate limit, etc. — surface it
